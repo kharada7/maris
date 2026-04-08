@@ -1,0 +1,70 @@
+name: Start dressca-consumer-backend for ZAP scan
+
+on:
+  workflow_call:
+    outputs:
+      application-url:
+        description: デプロイしたバックエンドアプリケーションのURL
+        value: ${{ jobs.build.outputs.application-url }}
+  workflow_dispatch:
+
+env:
+  WORKING_DIRECTORY: samples/Dressca/dressca-backend
+  SOLUTION_FILE_NAME: Dressca.Web.Consumer.slnf
+  APPLICATION_HOST: 127.0.0.1
+  APPLICATION_PORT: 5000
+
+defaults:
+  run:
+    working-directory: samples/Dressca/dressca-backend
+
+jobs:
+  build:
+    name: バックエンドアプリケーションのビルド
+    runs-on: ubuntu-latest
+    outputs:
+      application-url: ${{ steps.deploy-application.outputs.application-url }}
+    env:
+      BUILD_CONFIGURATION: Release
+    permissions:
+      checks: write
+      contents: read
+      pull-requests: write
+
+    steps:
+      - name: ブランチのチェックアウト
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          fetch-depth: 1
+
+      - name: .NET SDK のセットアップ
+        uses: actions/setup-dotnet@c2fa09f4bde5ebb9d1777cf28262a3eb3db3ced7  # v5.2.0
+        with:
+          dotnet-version: '10.*'
+
+      - name: NuGet パッケージの復元
+        run: dotnet restore ${{ env.SOLUTION_FILE_NAME }}
+
+      - id: application-build
+        name: アプリケーションのビルド
+        run: dotnet build ${{ env.SOLUTION_FILE_NAME }} --no-restore --configuration ${{ env.BUILD_CONFIGURATION }} --verbosity minimal
+
+      - id: deploy-application
+        name: Web サーバーへのデプロイ
+        shell: bash
+        run: |
+          nohup dotnet run --project src/Dressca.Web.Consumer/Dressca.Web.Consumer.csproj --configuration ${{ env.BUILD_CONFIGURATION }} --no-build -- --urls "http://${APPLICATION_HOST}:${APPLICATION_PORT}" > /var/tmp/consumer-api.log 2>&1 &
+          echo "application-url=http://${APPLICATION_HOST}:${APPLICATION_PORT}" >> "$GITHUB_OUTPUT"
+
+      - name: Web サーバーの起動確認
+        shell: bash
+        run: |
+          for attempt in {1..30}; do
+            if curl --fail --silent "http://${APPLICATION_HOST}:${APPLICATION_PORT}" > /dev/null 2>&1; then
+              exit 0
+            fi
+            sleep 2
+          done
+
+          cat /var/tmp/consumer-api.log
+          exit 1
