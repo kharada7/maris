@@ -106,6 +106,7 @@ jobs:
             -p 8090:8090 \
             ghcr.io/zaproxy/zaproxy:stable \
             zap.sh -daemon -host 0.0.0.0 -port 8080 \
+              -addonuninstall client
               -config api.disablekey=true \
               -config api.addrs.addr.name=.* \
               -config api.addrs.addr.regex=true
@@ -114,7 +115,7 @@ jobs:
         shell: bash
         run: |
           for attempt in {1..30}; do
-            if curl --fail --silent http://127.0.0.1:8090/JSON/core/view/version/ > /dev/null; then
+            if curl --fail --silent http://127.0.0.1:8080/JSON/core/view/version/ > /dev/null; then
               exit 0
             fi
             sleep 2
