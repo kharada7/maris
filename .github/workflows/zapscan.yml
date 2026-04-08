@@ -247,7 +247,17 @@ jobs:
           name: zap-playwright-debug
           path: ${{ runner.temp }}/zap-playwright-debug
 
-      # スキャン範囲をユースケース関連画面に限定
+      - name: アプリケーションログのアップロード
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: zap-application-logs
+          path: | 
+            /var/tmp/consumer-preview.log
+            /var/tmp/consumer-api.log
+          if-no-files-found: warn
+
+      # スキャン範囲をユースケース関連画面に限定--
       - name: Configure ZAP context
         shell: bash
         run: |
