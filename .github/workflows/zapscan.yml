@@ -85,7 +85,8 @@ jobs:
 
           cat /var/tmp/consumer-api.log
           exit 1
-      
+
+      # ベースラインスキャンの実行
       - name: Run ZAP Baseline Scan
         uses: zaproxy/action-baseline@v0.15.0
         with:
@@ -94,4 +95,124 @@ jobs:
           rules_file_name: .zap/rules.tsv
           cmd_options: '-a -j'
           allow_issue_writing: false
+
+      # ZAP daemon 起動
+      - name: Start ZAP Daemon
+        shell: bash
+        run: |
+          docker run -d --name zap \
+            -u root \
+            -p 8080:8080 \
+            -p 8090:8090 \
+            ghcr.io/zaproxy/zaproxy:stable \
+            zap.sh -daemon -host 0.0.0.0 -port 8090 \
+              -config api.disablekey=true \
+              -config api.addrs.addr.name=.* \
+              -config api.addrs.addr.regex=true
+
+      - name: Wait for ZAP to be ready
+        shell: bash
+        run: |
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:8090/JSON/core/view/version/ > /dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+
+          docker logs zap
+          exit 1
+
+      # Playwright テストシナリオを ZAP プロキシ経由で実行
+      - name: Playwright 依存のインストール
+        working-directory: samples/Dressca/dressca-frontend/consumer
+        run: npm i -D @playwright/test
+
+      - name: Playwright ブラウザーのインストール
+        working-directory: samples/Dressca/dressca-frontend/consumer
+        run: npx playwright install --with-deps chromium
+      
+      - name: Playwright でのユースケースの実行
+        working-directory: samples/Dressca/dressca-frontend/consumer
+        env:
+          BASE_URL: http://${{ env.FRONTEND_HOST }}:${{ env.FRONTEND_PORT }}
+          ZAP_PROXY: http://127.0.0.1:8080
+        run: |
+          node -e "
+          const { chromium } = require('@playwright');
+          (async () => {
+            const browser = await chromium.launch({ headless: true });
+            const context = await browser.newContext({
+              proxy: {
+                server: process.env.ZAP_PROXY
+              }
+            });
+            const page = await context.newPage();
+            await page.goto(process.env.BASE_URL + '/authentication/login');
+            await page.fill('#email', 'user@example.com');
+            await page.fill('#password', 'password');
+            await page.getByRole('button', { name: 'ログイン' }).click();
+            await page.getByRole('button', { name: '買い物かごに入れる' }).first().click();
+            await page.getByRole('button', { name: 'レジに進む' }).click();
+            await page.getByRole('button', { name: '注文を確定する' }).click();
+            await browser.close();
+          })().catch(e => {
+            console.error(e);
+            process.exit(1);
+          });
+          "
+
+      # スキャン範囲をユースケース関連画面に限定
+      - name: Configure ZAP context
+        shell: bash
+        run: |
+          curl --silent "http://127.0.0.1:8090/JSON/context/action/newContext/?contextName=Dressca"
+          curl --silent "http://127.0.0.1:8090/JSON/context/action/includeInContext/?contextName=Dressca&regex=http://127.0.0.1:4173/authentication/login.*"
+          curl --silent "http://127.0.0.1:8090/JSON/context/action/includeInContext/?contextName=Dressca&regex=http://127.0.0.1:4173/basket.*"
+          curl --silent "http://127.0.0.1:8090/JSON/context/action/includeInContext/?contextName=Dressca&regex=http://127.0.0.1:4173/ordering/checkout.*"
+
+      # Spider
+      - name: Run ZAP spider
+        shell: bash
+        run: |
+          scan_id=$(curl --silent "http://127.0.0.1:8090/JSON/spider/action/scan/?url=http://127.0.0.1:4173/&maxChildren=20&recurse=true" | jq -r .scan)
+          for attempt in {1..120}; do
+            status=$(curl --silent "http://127.0.0.1:8090/JSON/spider/view/status/?scanId=${scan_id}" | jq -r .status)
+            echo "Spider status: ${status}%"
+            [ "${status}" = "100" ] && exit 0
+            sleep 2
+          done
+          exit 1
+
+      # Active Scan
+      - name: Run ZAP active scan
+        shell: bash
+        run: |
+          scan_id=$(curl --silent "http://127.0.0.1:8090/JSON/ascan/action/scan/?url=http://127.0.0.1:4173/&recurse=true&inScopeOnly=true" | jq -r .scan)
+          for attempt in {1..180}; do
+            status=$(curl --silent "http://127.0.0.1:8090/JSON/ascan/view/status/?scanId=${scan_id}" | jq -r .status)
+            echo "Active scan status: ${status}%"
+            [ "${status}" = "100" ] && exit 0
+            sleep 5
+          done
+          exit 1
+
+      - name: Export ZAP report
+        shell: bash
+        run: |
+          curl --silent "http://127.0.0.1:8090/OTHER/core/other/htmlreport/" -o zap-report.html
+          curl --silent "http://127.0.0.1:8090/JSON/core/view/alerts/?baseurl=http://127.0.0.1:4173" | jq . > zap-alerts.json
+
+      - name: Upload ZAP artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: zap-results
+          path: |
+            zap-report.html
+            zap-alerts.json
+
+      - name: Stop ZAP
+        if: always()
+        shell: bash
+        run: docker rm -f zap || true
       
