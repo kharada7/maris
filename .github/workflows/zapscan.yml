@@ -9,13 +9,15 @@ jobs:
   start-backend:
     uses: ./.github/workflows/zapscan-backend.yml
   zap-scan:
-    - name: Run OWASP ZAP Baseline Scan
-      needs: [start-frontend, start-backend]
-      uses: zaproxy/action-baseline@v0.15.0
-      with:
-        token: ${{ secrets.GITHUB_TOKEN }}
-        target: ${{ needs.start-frontend.outputs.application-url }}
-        rules_file_name: .zap/rules.tsv
-        cmd_options: '-a -j'
-        allow_issue_writing: false
+    name: Run OWASP ZAP Baseline Scan
+    needs: [start-frontend, start-backend]
+    steps:
+      - name: Run ZAP Baseline Scan
+        uses: zaproxy/action-baseline@v0.15.0
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          target: ${{ needs.start-frontend.outputs.application-url }}
+          rules_file_name: .zap/rules.tsv
+          cmd_options: '-a -j'
+          allow_issue_writing: false
       
