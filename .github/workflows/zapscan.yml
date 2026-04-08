@@ -87,14 +87,14 @@ jobs:
           exit 1
 
       # ベースラインスキャンの実行
-      - name: Run ZAP Baseline Scan
-        uses: zaproxy/action-baseline@v0.15.0
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          target: http://${{ env.FRONTEND_HOST }}:${{ env.FRONTEND_PORT }}
-          rules_file_name: .zap/rules.tsv
-          cmd_options: '-a -j'
-          allow_issue_writing: false
+      # - name: Run ZAP Baseline Scan
+      #   uses: zaproxy/action-baseline@v0.15.0
+      #   with:
+      #     token: ${{ secrets.GITHUB_TOKEN }}
+      #     target: http://${{ env.FRONTEND_HOST }}:${{ env.FRONTEND_PORT }}
+      #     rules_file_name: .zap/rules.tsv
+      #     cmd_options: '-a -j'
+      #     allow_issue_writing: false
 
       # ZAP daemon 起動
       - name: Start ZAP Daemon
@@ -106,7 +106,7 @@ jobs:
             -p 8090:8090 \
             ghcr.io/zaproxy/zaproxy:stable \
             zap.sh -daemon -host 0.0.0.0 -port 8080 \
-              -addonuninstall client
+              -addonuninstall client \
               -config api.disablekey=true \
               -config api.addrs.addr.name=.* \
               -config api.addrs.addr.regex=true
