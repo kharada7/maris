@@ -137,30 +137,115 @@ jobs:
         env:
           BASE_URL: http://${{ env.FRONTEND_HOST }}:${{ env.FRONTEND_PORT }}
           ZAP_PROXY: http://127.0.0.1:8080
+          DEBUG_DIR: ${{ runner.temp }}/zap-playwright-debug
         run: |
-          node -e "
-          const { chromium } = require('playwright');
-          (async () => {
-            const browser = await chromium.launch({ headless: true });
+          node <<'EOF'
+          const fs = require('node:fs/promises')
+          const path = require('node:path')
+          const { chromium } = require('playwright')
+
+          const debugDir = process.env.DEBUG_DIR
+          const consoleLogs = []
+          const failedRequests = []
+          const errorResponses = []
+
+          ;(async () => {
+            await fs.mkdir(debugDir, { recursive: true })
+
+            const browser = await chromium.launch({ headless: true })
             const context = await browser.newContext({
               proxy: {
-                server: process.env.ZAP_PROXY
+                server: process.env.ZAP_PROXY,
+              },
+            })
+
+            const page = await context.newPage()
+
+            page.on('console', (msg) => {
+              consoleLogs.push({ type: msg.type(), text: msg.text() })
+            })
+
+            page.on('requestfailed', (request) => {
+              failedRequests.push({
+                url: request.url(),
+                method: request.method(),
+                errorText: request.failure()?.errorText,
+              })
+            })
+
+            page.on('response', (response) => {
+              if (response.status() >= 400) {
+                errorResponses.push({
+                  url: response.url(),
+                  status: response.status(),
+                  statusText: response.statusText(),
+                })
               }
-            });
-            const page = await context.newPage();
-            await page.goto(process.env.BASE_URL + '/authentication/login');
-            await page.fill('#email', 'user@example.com');
-            await page.fill('#password', 'password');
-            await page.getByRole('button', { name: 'ログイン' }).click();
-            await page.getByRole('button', { name: '買い物かごに入れる' }).first().click();
-            await page.getByRole('button', { name: 'レジに進む' }).click();
-            await page.getByRole('button', { name: '注文を確定する' }).click();
-            await browser.close();
-          })().catch(e => {
-            console.error(e);
-            process.exit(1);
-          });
-          "
+            })
+
+            try {
+              await page.goto(`${process.env.BASE_URL}/authentication/login`, { waitUntil: 'domcontentloaded' })
+              await page.screenshot({ path: path.join(debugDir, '01-login-page.png'), fullPage: true })
+              await fs.writeFile(path.join(debugDir, '01-login-page.html'), await page.content(), 'utf8')
+
+              await page.fill('#email', 'user@example.com')
+              await page.fill('#password', 'password')
+
+              const loginButton = page.getByRole('button', { name: 'ログイン' })
+              const disabled = await loginButton.isDisabled()
+              await fs.writeFile(
+                path.join(debugDir, '02-login-button-state.txt'),
+                `url=${page.url()}\nloginButtonDisabled=${disabled}\n`,
+                'utf8',
+              )
+
+              await loginButton.click()
+              await page.waitForLoadState('networkidle')
+
+              await fs.writeFile(path.join(debugDir, '03-after-login-url.txt'), `${page.url()}\n`, 'utf8')
+              await page.screenshot({ path: path.join(debugDir, '03-after-login.png'), fullPage: true })
+              await fs.writeFile(path.join(debugDir, '03-after-login.html'), await page.content(), 'utf8')
+
+              await page.getByRole('button', { name: '買い物かごに入れる' }).first().waitFor({ timeout: 15000 })
+              await page.getByRole('button', { name: '買い物かごに入れる' }).first().click()
+              await page.getByRole('button', { name: 'レジに進む' }).click()
+              await page.getByRole('button', { name: '注文を確定する' }).click()
+
+              await page.screenshot({ path: path.join(debugDir, '04-after-order.png'), fullPage: true })
+            } catch (error) {
+              await fs.writeFile(path.join(debugDir, '99-playwright-error.txt'), String(error?.stack || error), 'utf8')
+              await page.screenshot({ path: path.join(debugDir, '99-failed-page.png'), fullPage: true })
+              await fs.writeFile(path.join(debugDir, '99-failed-page.html'), await page.content(), 'utf8')
+              throw error
+            } finally {
+              await fs.writeFile(path.join(debugDir, '10-console-logs.json'), JSON.stringify(consoleLogs, null, 2), 'utf8')
+              await fs.writeFile(path.join(debugDir, '11-request-failed.json'), JSON.stringify(failedRequests, null, 2), 'utf8')
+              await fs.writeFile(path.join(debugDir, '12-response-errors.json'), JSON.stringify(errorResponses, null, 2), 'utf8')
+              await browser.close()
+            }
+          })().catch((e) => {
+            console.error(e)
+            process.exit(1)
+          })
+          EOF
+
+      - name: 失敗時ログの収集
+        if: failure()
+        shell: bash
+        run: |
+          echo "--- frontend log ---"
+          cat /var/tmp/consumer-preview.log || true
+          echo "--- backend log ---"
+          cat /var/tmp/consumer-api.log || true
+          echo "--- zap log ---"
+          docker logs zap || true
+
+      - name: Playwright 診断情報のアップロード
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: zap-playwright-debug
+          path: ${{ runner.temp }}/zap-playwright-debug
 
       # スキャン範囲をユースケース関連画面に限定
       - name: Configure ZAP context
