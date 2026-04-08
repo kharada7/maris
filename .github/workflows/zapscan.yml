@@ -101,9 +101,8 @@ jobs:
         shell: bash
         run: |
           docker run -d --name zap \
+            --network host \
             -u root \
-            -p 8080:8080 \
-            -p 8090:8090 \
             ghcr.io/zaproxy/zaproxy:stable \
             zap.sh -daemon -host 0.0.0.0 -port 8080 \
               -addonuninstall client \
@@ -167,18 +166,18 @@ jobs:
       - name: Configure ZAP context
         shell: bash
         run: |
-          curl --silent "http://127.0.0.1:8090/JSON/context/action/newContext/?contextName=Dressca"
-          curl --silent "http://127.0.0.1:8090/JSON/context/action/includeInContext/?contextName=Dressca&regex=http://127.0.0.1:4173/authentication/login.*"
-          curl --silent "http://127.0.0.1:8090/JSON/context/action/includeInContext/?contextName=Dressca&regex=http://127.0.0.1:4173/basket.*"
-          curl --silent "http://127.0.0.1:8090/JSON/context/action/includeInContext/?contextName=Dressca&regex=http://127.0.0.1:4173/ordering/checkout.*"
+          curl --silent "http://127.0.0.1:8080/JSON/context/action/newContext/?contextName=Dressca"
+          curl --silent "http://127.0.0.1:8080/JSON/context/action/includeInContext/?contextName=Dressca&regex=http://127.0.0.1:4173/authentication/login.*"
+          curl --silent "http://127.0.0.1:8080/JSON/context/action/includeInContext/?contextName=Dressca&regex=http://127.0.0.1:4173/basket.*"
+          curl --silent "http://127.0.0.1:8080/JSON/context/action/includeInContext/?contextName=Dressca&regex=http://127.0.0.1:4173/ordering/checkout.*"
 
       # Spider
       - name: Run ZAP spider
         shell: bash
         run: |
-          scan_id=$(curl --silent "http://127.0.0.1:8090/JSON/spider/action/scan/?url=http://127.0.0.1:4173/&maxChildren=20&recurse=true" | jq -r .scan)
+          scan_id=$(curl --silent "http://127.0.0.1:8080/JSON/spider/action/scan/?url=http://127.0.0.1:4173/&maxChildren=20&recurse=true" | jq -r .scan)
           for attempt in {1..120}; do
-            status=$(curl --silent "http://127.0.0.1:8090/JSON/spider/view/status/?scanId=${scan_id}" | jq -r .status)
+            status=$(curl --silent "http://127.0.0.1:8080/JSON/spider/view/status/?scanId=${scan_id}" | jq -r .status)
             echo "Spider status: ${status}%"
             [ "${status}" = "100" ] && exit 0
             sleep 2
@@ -189,9 +188,9 @@ jobs:
       - name: Run ZAP active scan
         shell: bash
         run: |
-          scan_id=$(curl --silent "http://127.0.0.1:8090/JSON/ascan/action/scan/?url=http://127.0.0.1:4173/&recurse=true&inScopeOnly=true" | jq -r .scan)
+          scan_id=$(curl --silent "http://127.0.0.1:8080/JSON/ascan/action/scan/?url=http://127.0.0.1:4173/&recurse=true&inScopeOnly=true" | jq -r .scan)
           for attempt in {1..180}; do
-            status=$(curl --silent "http://127.0.0.1:8090/JSON/ascan/view/status/?scanId=${scan_id}" | jq -r .status)
+            status=$(curl --silent "http://127.0.0.1:8080/JSON/ascan/view/status/?scanId=${scan_id}" | jq -r .status)
             echo "Active scan status: ${status}%"
             [ "${status}" = "100" ] && exit 0
             sleep 5
@@ -201,8 +200,8 @@ jobs:
       - name: Export ZAP report
         shell: bash
         run: |
-          curl --silent "http://127.0.0.1:8090/OTHER/core/other/htmlreport/" -o zap-report.html
-          curl --silent "http://127.0.0.1:8090/JSON/core/view/alerts/?baseurl=http://127.0.0.1:4173" | jq . > zap-alerts.json
+          curl --silent "http://127.0.0.1:8080/OTHER/core/other/htmlreport/" -o zap-report.html
+          curl --silent "http://127.0.0.1:8080/JSON/core/view/alerts/?baseurl=http://127.0.0.1:4173" | jq . > zap-alerts.json
 
       - name: Upload ZAP artifacts
         uses: actions/upload-artifact@v4
