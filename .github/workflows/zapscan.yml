@@ -71,14 +71,6 @@ jobs:
           --hostname sql1 \
           -d mcr.microsoft.com/mssql/server:2022-latest
 
-      - name: データベース接続文字列を取得
-        id: get-connection-string
-        env:
-          APPSETTINGS_FILEPATH: samples/Dressca/dressca-backend/src/Dressca.Web.Consumer/appsettings.json
-        run: |
-          connectionString=$(cat ${{env.APPSETTINGS_FILEPATH}} | jq '.ConnectionStrings.DresscaDbContext')
-          echo "CONNECTION_STRING=${connectionString}" >> "$GITHUB_OUTPUT"
-
       - name: EF Core ツールのインストール
         shell: bash
         run: dotnet tool install --global dotnet-ef --version 10.*
@@ -86,7 +78,9 @@ jobs:
       - name: データベースのマイグレーション適用
         working-directory: samples/Dressca/dressca-backend
         shell: bash
-        run: dotnet ef database update --project src/Dressca.EfInfrastructure/Dressca.EfInfrastructure.csproj --connection "${{ steps.get-connection-string.outputs.CONNECTION_STRING }}"
+        run: |
+          dotnet ef database update --project src/Dressca.EfInfrastructure/Dressca.EfInfrastructure.csproj \
+          --connection "Server=localhost,1433;Database=Dressca_EShop;User=sa;Password=P@ssw0rd;Encrypt=false;"
       
       # ヘルスチェック
       - name: フロントエンドの起動確認
