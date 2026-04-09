@@ -58,6 +58,35 @@ jobs:
         shell: bash
         run: |
           nohup dotnet run --project src/Dressca.Web.Consumer/Dressca.Web.Consumer.csproj --configuration Release --no-build -- --urls "http://${BACKEND_HOST}:${BACKEND_PORT}" > /var/tmp/consumer-api.log 2>&1 &
+
+      - name: SQL Server の Docker イメージをプル
+        run: sudo docker pull mcr.microsoft.com/mssql/server:2022-latest
+
+      - name: SQL Server コンテナの起動
+        shell: bash
+        run: |
+          sudo docker run -e "ACCEPT_EULA=Y" \
+          -e "MSSQL_SA_PASSWORD=P@ssw0rd" \
+          -p 1433:1433 --name sql1 \
+          --hostname sql1 \
+          -d mcr.microsoft.com/mssql/server:2022-latest
+
+      - name: データベース接続文字列を取得
+        id: get-connection-string
+        env:
+          APPSETTINGS_FILEPATH: src/Dressca.Web.Consumer/appsettings.json
+        run: |
+          connectionString=$(cat ${{env.APPSETTINGS_FILEPATH}} | jq '.ConnectionStrings.DresscaDbContext')
+          echo "CONNECTION_STRING=${connectionString}" >> "$GITHUB_OUTPUT"
+
+      - name: EF Core ツールのインストール
+        shell: bash
+        run: dotnet tool install --global dotnet-ef --version 10.*
+
+      - name: データベースのマイグレーション適用
+        working-directory: samples/Dressca/dressca-backend/src/Dressca.EfInfrastructure
+        shell: bash
+        run: dotnet ef database update --connection ${{ steps.get-connection-string.outputs.CONNECTION_STRING }}
       
       # ヘルスチェック
       - name: フロントエンドの起動確認
