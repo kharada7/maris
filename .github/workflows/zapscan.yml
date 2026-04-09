@@ -74,7 +74,7 @@ jobs:
       - name: データベース接続文字列を取得
         id: get-connection-string
         env:
-          APPSETTINGS_FILEPATH: src/Dressca.Web.Consumer/appsettings.json
+          APPSETTINGS_FILEPATH: samples/Dressca/dressca-backend/src/Dressca.Web.Consumer/appsettings.json
         run: |
           connectionString=$(cat ${{env.APPSETTINGS_FILEPATH}} | jq '.ConnectionStrings.DresscaDbContext')
           echo "CONNECTION_STRING=${connectionString}" >> "$GITHUB_OUTPUT"
