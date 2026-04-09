@@ -86,7 +86,7 @@ jobs:
       - name: データベースのマイグレーション適用
         working-directory: samples/Dressca/dressca-backend
         shell: bash
-        run: dotnet ef database update --startup-project src/Dressca.Web.Consumer/Dressca.Web.Consumer.csproj --project src/Dressca.EfInfrastructure/Dressca.EfInfrastructure.csproj --connection "${{ steps.get-connection-string.outputs.CONNECTION_STRING }}"
+        run: dotnet ef database update --project src/Dressca.EfInfrastructure/Dressca.EfInfrastructure.csproj --connection "${{ steps.get-connection-string.outputs.CONNECTION_STRING }}"
       
       # ヘルスチェック
       - name: フロントエンドの起動確認
