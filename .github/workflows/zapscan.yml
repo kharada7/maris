@@ -57,7 +57,7 @@ jobs:
         working-directory: samples/Dressca/dressca-backend
         shell: bash
         run: |
-          nohup dotnet run --project src/Dressca.Web.Consumer/Dressca.Web.Consumer.csproj --configuration Release --no-build -- --urls "http://${BACKEND_HOST}:${BACKEND_PORT}" > /var/tmp/consumer-api.log 2>&1 &
+          nohup dotnet run --project src/Dressca.Web.Consumer/Dressca.Web.Consumer.csproj --environment Production --configuration Release --no-build -- --urls "http://${BACKEND_HOST}:${BACKEND_PORT}" > /var/tmp/consumer-api.log 2>&1 &
 
       - name: SQL Server の Docker イメージをプル
         run: sudo docker pull mcr.microsoft.com/mssql/server:2022-latest
