@@ -53,12 +53,6 @@ jobs:
           BUILD_CONFIGURATION: Release
         run: dotnet build Dressca.Web.Consumer.slnf --no-restore --configuration Release --verbosity minimal
       
-      - name: バックエンドサーバーへのデプロイ
-        working-directory: samples/Dressca/dressca-backend
-        shell: bash
-        run: |
-          nohup dotnet run --project src/Dressca.Web.Consumer/Dressca.Web.Consumer.csproj --environment Production --configuration Release --no-build -- --urls "http://${BACKEND_HOST}:${BACKEND_PORT}" > /var/tmp/consumer-api.log 2>&1 &
-
       - name: SQL Server の Docker イメージをプル
         run: sudo docker pull mcr.microsoft.com/mssql/server:2022-latest
 
@@ -71,6 +65,19 @@ jobs:
           --hostname sql1 \
           -d mcr.microsoft.com/mssql/server:2022-latest
 
+      - name: SQL Server の起動待機
+        shell: bash
+        run: |
+          for attempt in {1..30}; do
+            if timeout 1 bash -c '</dev/tcp/127.0.0.1/1433' 2>/dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+
+          sudo docker logs sql1
+          exit 1
+
       - name: EF Core ツールのインストール
         shell: bash
         run: dotnet tool install --global dotnet-ef --version 10.*
@@ -82,6 +89,22 @@ jobs:
           dotnet ef database update --project src/Dressca.EfInfrastructure/Dressca.EfInfrastructure.csproj \
           --connection "Server=localhost,1433;Database=Dressca_EShop;User=sa;Password=P@ssw0rd;Encrypt=false;"
       
+      - name: バックエンドサーバーへのデプロイ
+        working-directory: samples/Dressca/dressca-backend
+        shell: bash
+        env:
+          ASPNETCORE_ENVIRONMENT: Production
+          DOTNET_ENVIRONMENT: Production
+          ConnectionStrings__DresscaDbContext: Server=localhost,1433;Database=Dressca_Eshop;User=sa;Password=P@ssw0rd;TrustServerCertificate=true;
+        run: |
+          nohup dotnet run \
+          --project src/Dressca.Web.Consumer/Dressca.Web.Consumer.csproj \
+          --environment Production \
+          --configuration Release \
+          --no-build \
+          --no-launch-profile \
+          --urls "http://${BACKEND_HOST}:${BACKEND_PORT}" > /var/tmp/consumer-api.log 2>&1 &
+
       # ヘルスチェック
       - name: フロントエンドの起動確認
         shell: bash
